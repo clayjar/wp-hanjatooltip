@@ -11,7 +11,7 @@ The repository root is the plugin. WordPress reads `hanja-tooltip.php`.
 Clone it into the plugins directory. Use the HTTPS or SSH address shown under **Code** on this repository:
 
 ```bash
-git clone <repository-url> /path/to/wordpress/wp-content/plugins/hanja-tooltip
+git clone https://github.com/clayjar/wp-hanjatooltip.git /path/to/wordpress/wp-content/plugins/hanja-tooltip
 ```
 
 Or download the ZIP from that **Code** menu, then in WordPress open **Plugins → Add New → Upload Plugin** and install that file. GitHub names the extracted folder after the repository and branch. That name is fine.
@@ -27,7 +27,7 @@ Add the dictionary connection to `wp-config.php` above the “That's all, stop e
 ```php
 define( 'HANJA_DB_HOST', '127.0.0.1' );
 define( 'HANJA_DB_PORT', 3306 );
-define( 'HANJA_DB_NAME', 'hanja1' );
+define( 'HANJA_DB_NAME', 'hanja' );
 define( 'HANJA_DB_USER', 'hanja_webuser' );
 define( 'HANJA_DB_PASSWORD', '…' );
 ```
