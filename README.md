@@ -36,6 +36,8 @@ define( 'HANJA_DB_PASSWORD', '…' );
 
 ## Load the dictionary
 
+**Skip this section if the `hanja` table is already loaded.** The lookup only reads that table. Running the loader again truncates it and inserts the dictionary from scratch.
+
 The dictionary file is the hanja list by Choe Hwanjin (2005, 2006), published in [libhangul](https://github.com/libhangul/libhangul) as [`data/hanja/hanja.txt`](https://github.com/libhangul/libhangul/blob/main/data/hanja/hanja.txt). Its header states the copyright and license. This repository does not include that file.
 
 Save it as `data/hanja.txt` inside the plugin directory. The database must already exist. The account that loads it needs `CREATE`, `INSERT`, and `TRUNCATE` on that database. That can be a different account from the `SELECT`-only user configured above.
