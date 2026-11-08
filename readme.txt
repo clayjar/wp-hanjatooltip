@@ -1,5 +1,5 @@
 === Hanja Tooltip ===
-Contributors: clayjar
+Contributors: clayjarhan
 Tags: dictionary, korean, language
 Requires at least: 6.5
 Tested up to: 7.1
