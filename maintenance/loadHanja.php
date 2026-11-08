@@ -10,9 +10,15 @@
  * DB_PASSWORD. A .env file in the plugin root fills any that are unset.
  */
 
+if ( ! defined( 'ABSPATH' ) ) {
+	if ( 'cli' !== PHP_SAPI ) {
+		exit;
+	}
+}
+
 if ( PHP_SAPI === 'cli' && isset( $argv[0] ) && realpath( $argv[0] ) === realpath( __FILE__ ) ) {
 	if ( !function_exists( 'mb_strlen' ) ) {
-		fwrite( STDERR, "The mbstring extension is required.\n" );
+		file_put_contents( 'php://stderr', "The mbstring extension is required.\n" );
 		exit( 1 );
 	}
 	$envPath = dirname( __DIR__ ) . '/.env';
@@ -21,7 +27,7 @@ if ( PHP_SAPI === 'cli' && isset( $argv[0] ) && realpath( $argv[0] ) === realpat
 	}
 	$file = $argv[1] ?? '';
 	if ( $file === '' || !is_readable( $file ) ) {
-		fwrite( STDERR, "Usage: php maintenance/loadHanja.php data/hanja.txt\n" );
+		file_put_contents( 'php://stderr', "Usage: php maintenance/loadHanja.php data/hanja.txt\n" );
 		exit( 1 );
 	}
 	main( $file );
@@ -37,15 +43,18 @@ function main( string $file ): void {
 	$user = envValue( 'DB_USERNAME' );
 	$password = getenv( 'DB_PASSWORD' );
 	if ( $host === null || $port === null || $database === null || $user === null || $password === false ) {
-		fwrite( STDERR, "Set DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, and DB_PASSWORD.\n" );
+		file_put_contents( 'php://stderr', "Set DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, and DB_PASSWORD.\n" );
 		exit( 1 );
 	}
 	if ( !ctype_digit( $port ) ) {
-		fwrite( STDERR, "DB_PORT must be a number.\n" );
+		file_put_contents( 'php://stderr', "DB_PORT must be a number.\n" );
 		exit( 1 );
 	}
 
 	$rows = loadEntries( $file );
+	// This importer is a CLI script. It may target a database other than the
+	// one in wp-config.php, and WordPress is not loaded, so $wpdb is not available.
+	// phpcs:disable WordPress.DB.RestrictedFunctions.mysql_mysqli_report, WordPress.DB.RestrictedClasses.mysql__mysqli
 	$previous = mysqli_report( MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT );
 	try {
 		$db = new mysqli( $host, $user, $password, $database, (int)$port );
@@ -77,11 +86,12 @@ function main( string $file ): void {
 		}
 		$db->close();
 	} catch ( mysqli_sql_exception $e ) {
-		fwrite( STDERR, "Database error: " . $e->getMessage() . "\n" );
+		file_put_contents( 'php://stderr', "Database error: " . $e->getMessage() . "\n" );
 		exit( 1 );
 	} finally {
 		mysqli_report( $previous );
 	}
+	// phpcs:enable WordPress.DB.RestrictedFunctions.mysql_mysqli_report, WordPress.DB.RestrictedClasses.mysql__mysqli
 
 	echo 'Inserted ' . count( $rows ) . " hanja.\n";
 }
@@ -132,14 +142,14 @@ function envValue( string $key ): ?string {
  * @return array<string,string>
  */
 function loadEntries( string $path ): array {
-	$handle = fopen( $path, 'rb' );
-	if ( $handle === false ) {
-		fwrite( STDERR, "Cannot read {$path}.\n" );
+	$lines = file( $path, FILE_IGNORE_NEW_LINES );
+	if ( $lines === false ) {
+		file_put_contents( 'php://stderr', "Cannot read {$path}.\n" );
 		exit( 1 );
 	}
 	$merged = [];
-	while ( ( $line = fgets( $handle ) ) !== false ) {
-		$raw = rtrim( $line, "\r\n" );
+	foreach ( $lines as $line ) {
+		$raw = rtrim( $line, "\r" );
 		if ( trim( $raw ) === '' || str_starts_with( ltrim( $raw ), '#' ) ) {
 			continue;
 		}
@@ -158,6 +168,5 @@ function loadEntries( string $path ): array {
 			$merged[$hanja] = $text;
 		}
 	}
-	fclose( $handle );
 	return $merged;
 }

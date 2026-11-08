@@ -28,9 +28,7 @@ class Hanja_Tooltip {
 	 * Register content, asset, and REST hooks.
 	 */
 	public function __construct() {
-		if ( function_exists( 'load_plugin_textdomain' ) ) {
-			load_plugin_textdomain( 'hanja-tooltip', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
-		}
+		$this->register_bundled_translations();
 
 		add_filter( 'the_content', array( $this, 'wrap_hanja_characters' ), 20 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
@@ -373,19 +371,42 @@ class Hanja_Tooltip {
 	/**
 	 * Record a database failure without the password.
 	 *
+	 * Query failures are already written by wpdb. Connection failures are not,
+	 * because db_connect( false ) returns without logging.
+	 *
 	 * @param wpdb $db Connection that failed.
 	 */
 	private function log_db_failure( $db ) {
-		$detail = '';
-		if ( $db->dbh instanceof mysqli ) {
-			$detail = mysqli_error( $db->dbh );
-		} elseif ( function_exists( 'mysqli_connect_errno' ) && mysqli_connect_errno() ) {
-			$detail = mysqli_connect_error();
+		$detail = is_string( $db->last_error ) ? $db->last_error : '';
+		if ( '' === $detail ) {
+			$detail         = 'dictionary database is unavailable';
+			$db->last_error = $detail;
 		}
-		if ( ! is_string( $detail ) || '' === $detail ) {
-			$detail = 'dictionary database is unavailable';
+
+		if ( $db->ready ) {
+			return;
 		}
-		error_log( 'Hanja Tooltip: ' . $detail );
+
+		if ( ! is_string( $db->last_query ) || '' === $db->last_query ) {
+			$db->last_query = 'connect';
+		}
+		$db->print_error( $detail );
+	}
+
+	/**
+	 * Let WordPress find translations shipped with the plugin.
+	 *
+	 * Language packs in wp-content/languages/plugins are loaded automatically.
+	 * The custom path is the fallback for the bundled languages directory.
+	 */
+	private function register_bundled_translations() {
+		if ( ! isset( $GLOBALS['wp_textdomain_registry'] ) || ! is_object( $GLOBALS['wp_textdomain_registry'] ) ) {
+			return;
+		}
+		if ( ! method_exists( $GLOBALS['wp_textdomain_registry'], 'set_custom_path' ) ) {
+			return;
+		}
+		$GLOBALS['wp_textdomain_registry']->set_custom_path( 'hanja-tooltip', dirname( __FILE__ ) . '/languages' );
 	}
 }
 
@@ -415,6 +436,31 @@ class Hanja_Tooltip_DB extends wpdb {
 		$this->dbname     = $dbname;
 		$this->dbhost     = $dbhost;
 		$this->db_connect( false );
+	}
+
+	/**
+	 * Connect without aborting the request, and keep the server message.
+	 *
+	 * wpdb::db_connect() drops the handle before it stores a connection error.
+	 *
+	 * @param bool $allow_bail Unused. A failed lookup must return an error instead of dying.
+	 * @return bool
+	 */
+	public function db_connect( $allow_bail = true ) {
+		unset( $allow_bail );
+
+		$connected = parent::db_connect( false );
+		if ( $connected || '' !== $this->last_error ) {
+			return $connected;
+		}
+
+		// phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_connect_error -- wpdb does not retain this message.
+		$message = mysqli_connect_error();
+		if ( is_string( $message ) && '' !== $message ) {
+			$this->last_error = $message;
+		}
+
+		return false;
 	}
 
 	/**
