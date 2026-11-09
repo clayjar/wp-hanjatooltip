@@ -1,6 +1,5 @@
 .hanja-word {
 	cursor: pointer;
-	user-select: none;
 	touch-action: manipulation;
 }
 
