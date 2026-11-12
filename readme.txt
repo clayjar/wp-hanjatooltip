@@ -51,7 +51,9 @@ The dictionary file is the hanja list by Choe Hwanjin, published in [libhangul](
 
 Set the connection in the environment, or in a `.env` file in the plugin root. `.env` fills only variables that are not already set.
 
-`php maintenance/loadHanja.php data/hanja.txt`
+`bash maintenance/loadHanja data/hanja.txt`
+
+Run that from the plugin directory inside WordPress. The command loads WordPress, then `maintenance/loadHanja.php` writes the dictionary through `$wpdb`. Opening that PHP file in a browser exits immediately. Set `WP_LOAD_PATH` to `wp-load.php` when that file lives somewhere else.
 
 Each data line is `entry:hanja:definition`. Empty lines and comments are skipped. Only a hanja field of one character is stored. An empty definition falls back to the entry. Another reading of the same character is appended with ` / `.
 
@@ -64,4 +66,4 @@ The script creates `hanja` when it is missing. `hanja` is a `CHAR(1)` primary ke
 * Look up one character from the hanja table.
 * Wrap each Han ideograph in post content.
 * Open a tooltip on click or tap.
-* Load the dictionary with `maintenance/loadHanja.php`.
+* Load the dictionary with `bash maintenance/loadHanja`. Direct access to the PHP file exits.

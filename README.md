@@ -52,9 +52,13 @@ DB_USERNAME=
 DB_PASSWORD=
 ```
 
+`localhost` keeps the MySQL socket. Any other host gets `DB_PORT` appended.
+
 ```bash
-php maintenance/loadHanja.php data/hanja.txt
+bash maintenance/loadHanja data/hanja.txt
 ```
+
+Run that from the plugin directory inside WordPress. The command loads WordPress, then `maintenance/loadHanja.php` writes the dictionary through `$wpdb`. Opening that PHP file in a browser exits immediately. `wp-load.php` is found by walking up from the plugin. Set `WP_LOAD_PATH` to that file when it lives somewhere else. The `DB_*` settings are the dictionary connection and can name a different database than WordPress.
 
 Each data line is `entry:hanja:definition`. Empty lines and comments are skipped. Only a hanja field of one character is stored. An empty definition falls back to the Korean `entry`. Another reading of the same character is appended with ` / `, in file order.
 

@@ -1,36 +1,40 @@
-#!/usr/bin/env php
 <?php
-
 /**
  * Load single-character hanja from a libhangul hanja.txt file.
  *
- * Usage: php maintenance/loadHanja.php data/hanja.txt
+ * Usage: bash maintenance/loadHanja data/hanja.txt
  *
- * Connection settings are DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, and
- * DB_PASSWORD. A .env file in the plugin root fills any that are unset.
+ * The shell command loads WordPress, then includes this file. Connection
+ * settings are DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, and DB_PASSWORD.
+ * A .env file in the plugin root fills any that are unset.
+ *
+ * @package Hanja_Tooltip
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
-	if ( 'cli' !== PHP_SAPI ) {
-		exit;
+	if ( 'cli' === PHP_SAPI ) {
+		file_put_contents( 'php://stderr', "Usage: bash maintenance/loadHanja data/hanja.txt\n" );
 	}
+	exit( 'cli' === PHP_SAPI ? 1 : 0 ); // Exit if accessed directly.
 }
 
-if ( PHP_SAPI === 'cli' && isset( $argv[0] ) && realpath( $argv[0] ) === realpath( __FILE__ ) ) {
-	if ( !function_exists( 'mb_strlen' ) ) {
-		file_put_contents( 'php://stderr', "The mbstring extension is required.\n" );
-		exit( 1 );
+if ( 'cli' === PHP_SAPI ) {
+	$dictionary = getenv( 'HANJA_LOAD_FILE' );
+	if ( is_string( $dictionary ) && '' !== $dictionary ) {
+		if ( ! function_exists( 'mb_strlen' ) ) {
+			file_put_contents( 'php://stderr', "The mbstring extension is required.\n" );
+			exit( 1 );
+		}
+		$envPath = dirname( __DIR__ ) . '/.env';
+		if ( is_readable( $envPath ) ) {
+			loadEnv( $envPath );
+		}
+		if ( ! is_readable( $dictionary ) ) {
+			file_put_contents( 'php://stderr', "Usage: bash maintenance/loadHanja data/hanja.txt\n" );
+			exit( 1 );
+		}
+		main( $dictionary );
 	}
-	$envPath = dirname( __DIR__ ) . '/.env';
-	if ( is_readable( $envPath ) ) {
-		loadEnv( $envPath );
-	}
-	$file = $argv[1] ?? '';
-	if ( $file === '' || !is_readable( $file ) ) {
-		file_put_contents( 'php://stderr', "Usage: php maintenance/loadHanja.php data/hanja.txt\n" );
-		exit( 1 );
-	}
-	main( $file );
 }
 
 /**
@@ -52,48 +56,129 @@ function main( string $file ): void {
 	}
 
 	$rows = loadEntries( $file );
-	// This importer is a CLI script. It may target a database other than the
-	// one in wp-config.php, and WordPress is not loaded, so $wpdb is not available.
-	// phpcs:disable WordPress.DB.RestrictedFunctions.mysql_mysqli_report, WordPress.DB.RestrictedClasses.mysql__mysqli
-	$previous = mysqli_report( MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT );
-	try {
-		$db = new mysqli( $host, $user, $password, $database, (int)$port );
-		$db->set_charset( 'utf8mb4' );
-		$db->query(
+	loadDictionaryClass();
+
+	// Dictionary connection. It may be a different database from wp-config.php.
+	$wpdb = new Hanja_Tooltip_DB( $user, $password, $database, dictionaryHost( $host, (int) $port ) );
+	if ( ! $wpdb->ready ) {
+		databaseError( connectionMessage( $wpdb ) );
+	}
+
+	// No placeholders: CREATE, TRUNCATE, and the transaction statements take no input.
+	checkStatement(
+		$wpdb,
+		$wpdb->query(
 			'CREATE TABLE IF NOT EXISTS hanja (
 				hanja CHAR(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
 				definition TEXT NOT NULL,
 				PRIMARY KEY (hanja)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin'
+		)
+	);
+	checkStatement( $wpdb, $wpdb->query( 'TRUNCATE TABLE hanja' ) );
+	checkStatement( $wpdb, $wpdb->query( 'START TRANSACTION' ) );
+
+	foreach ( $rows as $char => $text ) {
+		$inserted = $wpdb->insert(
+			'hanja',
+			array(
+				'hanja'      => $char,
+				'definition' => $text,
+			),
+			array( '%s', '%s' )
 		);
-		$db->query( 'TRUNCATE TABLE hanja' );
-		$db->begin_transaction();
-		try {
-			$stmt = $db->prepare( 'INSERT INTO hanja (hanja, definition) VALUES (?, ?)' );
-			$char = '';
-			$text = '';
-			$stmt->bind_param( 'ss', $char, $text );
-			foreach ( $rows as $key => $value ) {
-				$char = $key;
-				$text = $value;
-				$stmt->execute();
-			}
-			$db->commit();
-			$stmt->close();
-		} catch ( mysqli_sql_exception $e ) {
-			$db->rollback();
-			throw $e;
+		if ( false === $inserted ) {
+			$wpdb->query( 'ROLLBACK' );
+			databaseError( $wpdb->last_error );
 		}
-		$db->close();
-	} catch ( mysqli_sql_exception $e ) {
-		file_put_contents( 'php://stderr', "Database error: " . $e->getMessage() . "\n" );
-		exit( 1 );
-	} finally {
-		mysqli_report( $previous );
 	}
-	// phpcs:enable WordPress.DB.RestrictedFunctions.mysql_mysqli_report, WordPress.DB.RestrictedClasses.mysql__mysqli
+
+	checkStatement( $wpdb, $wpdb->query( 'COMMIT' ) );
+	$wpdb->close();
 
 	echo 'Inserted ' . count( $rows ) . " hanja.\n";
+}
+
+/**
+ * Load the dictionary connection class after WordPress has defined wpdb.
+ */
+function loadDictionaryClass(): void {
+	if ( ! class_exists( 'wpdb', false ) ) {
+		file_put_contents( 'php://stderr', "WordPress did not load wpdb.\n" );
+		exit( 1 );
+	}
+
+	require_once dirname( __DIR__ ) . '/includes/class-hanja-tooltip-db.php';
+	if ( ! class_exists( 'Hanja_Tooltip_DB', false ) ) {
+		file_put_contents( 'php://stderr', "Could not load the dictionary database class.\n" );
+		exit( 1 );
+	}
+}
+
+/**
+ * Host string wpdb accepts. localhost stays a socket; other hosts gain the port.
+ */
+function dictionaryHost( string $host, int $port ): string {
+	if ( $port <= 0 || hostIncludesPort( $host ) || 'localhost' === strtolower( $host ) ) {
+		return $host;
+	}
+	return $host . ':' . $port;
+}
+
+/**
+ * Whether a wpdb host string already names a port or a socket.
+ */
+function hostIncludesPort( string $host ): bool {
+	if ( false !== strpos( $host, ':/' ) ) {
+		return true;
+	}
+	if ( isset( $host[0] ) && '[' === $host[0] ) {
+		return false !== strpos( $host, ']:' );
+	}
+	return 1 === substr_count( $host, ':' );
+}
+
+/**
+ * Stop when a statement failed.
+ *
+ * @param wpdb  $wpdb   Open dictionary connection.
+ * @param mixed $result Return value from wpdb.
+ */
+function checkStatement( wpdb $wpdb, $result ): void {
+	if ( false === $result ) {
+		databaseError( $wpdb->last_error );
+	}
+}
+
+/**
+ * Print a database error and stop.
+ *
+ * @param mixed $message Server message, when one is available.
+ */
+function databaseError( $message ): void {
+	if ( ! is_string( $message ) || '' === $message ) {
+		$message = 'unknown database error';
+	}
+	file_put_contents( 'php://stderr', 'Database error: ' . $message . "\n" );
+	exit( 1 );
+}
+
+/**
+ * Connection failure text without the password.
+ *
+ * @param wpdb $wpdb Connection that failed.
+ */
+function connectionMessage( wpdb $wpdb ): string {
+	if ( is_string( $wpdb->last_error ) && '' !== $wpdb->last_error ) {
+		return $wpdb->last_error;
+	}
+	if ( is_wp_error( $wpdb->error ) ) {
+		return wp_strip_all_tags( $wpdb->error->get_error_message() );
+	}
+	if ( is_string( $wpdb->error ) && '' !== $wpdb->error ) {
+		return wp_strip_all_tags( $wpdb->error );
+	}
+	return 'Could not connect to the dictionary database.';
 }
 
 /**

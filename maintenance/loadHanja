@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Load the hanja dictionary. WordPress boots before maintenance/loadHanja.php runs.
+set -euo pipefail
+
+plugin=$(cd "$(dirname "$0")/.." && pwd)
+dictionary=${1:-}
+
+if [[ -z "$dictionary" || ! -r "$dictionary" ]]; then
+	echo "Usage: bash maintenance/loadHanja data/hanja.txt" >&2
+	exit 1
+fi
+
+if [[ "$dictionary" != /* ]]; then
+	dictionary="$PWD/$dictionary"
+fi
+
+export HANJA_PLUGIN_DIR="$plugin"
+export HANJA_LOAD_FILE="$dictionary"
+
+php <<'PHP'
+<?php
+$plugin   = getenv( 'HANJA_PLUGIN_DIR' );
+$override = getenv( 'WP_LOAD_PATH' );
+$path     = null;
+
+if ( is_string( $override ) && '' !== $override ) {
+	if ( is_file( $override ) && is_readable( $override ) ) {
+		$path = $override;
+	} else {
+		fwrite( STDERR, "WP_LOAD_PATH is not a readable file.\n" );
+		exit( 1 );
+	}
+} else {
+	$dir = $plugin;
+	for ( $i = 0; $i < 8; $i++ ) {
+		$candidate = $dir . '/wp-load.php';
+		if ( is_file( $candidate ) && is_readable( $candidate ) ) {
+			$path = $candidate;
+			break;
+		}
+		$parent = dirname( $dir );
+		if ( $parent === $dir ) {
+			break;
+		}
+		$dir = $parent;
+	}
+}
+
+if ( null === $path ) {
+	fwrite( STDERR, "Cannot find wp-load.php. Run this from the plugin inside WordPress, or set WP_LOAD_PATH.\n" );
+	exit( 1 );
+}
+
+if ( ! defined( 'SHORTINIT' ) ) {
+	define( 'SHORTINIT', true );
+}
+
+require_once $path;
+require_once $plugin . '/maintenance/loadHanja.php';
+PHP
