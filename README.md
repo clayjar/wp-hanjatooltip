@@ -4,6 +4,8 @@ WordPress plugin that wraps each Han ideograph in post content and shows a dicti
 
 The lookup reads the `hanja` table. The page script calls `/wp-json/hanja/v1/lookup?char=韓`.
 
+![A sample screenshot](https://files.mhan.dev/img/wp-hanja-tooltip-1.png "click on a hanja")
+
 ## Install
 
 The repository root is the plugin. WordPress reads `hanja-tooltip.php`.

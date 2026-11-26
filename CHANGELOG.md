@@ -1,18 +1,10 @@
 # Changelog
 
-## [1.0.1] - 2026-11-12
+## [1.0.0] - 2026-11-25
 
 ### Removed
 
 - Korean translation file
-
-### Changed
-
-- Use wpdb() and safe SQL calls
-- Use conditional to not allow direct file access to plugin files
-
-
-## [1.0.0] - 2026-11-07
 
 ### Added
 
@@ -23,6 +15,8 @@
 
 ### Changed
 
+- Use wpdb() and safe SQL calls
+- Use conditional to not allow direct file access to plugin files
 - Dictionary connection failures are recorded through `$wpdb`. Query failures were already logged there.
 - `maintenance/loadHanja.php` refuses direct web access and reads the dictionary file with `file()`.
 - `maintenance/loadHanja.php` loads the dictionary through `$wpdb`. Inserts use `$wpdb->insert()`, which prepares the character and definition.
